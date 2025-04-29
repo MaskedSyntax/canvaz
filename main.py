@@ -22,10 +22,10 @@ class WallpaperViewer(Gtk.Window):
         vbox.pack_start(scrolled, True, True, 0)
 
         self.grid = Gtk.FlowBox()
-        self.grid.set_max_children_per_line(5)
-        self.grid.set_selection_mode(Gtk.SelectionMode.NONE)
-        self.grid.set_row_spacing(10)
-        self.grid.set_column_spacing(10)
+        # self.grid.set_max_children_per_line(5)
+        self.grid.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.grid.set_row_spacing(0) #
+        self.grid.set_column_spacing(0) #
         scrolled.add(self.grid)
 
         self.selected_path = None
