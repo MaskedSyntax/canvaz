@@ -1,103 +1,168 @@
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, GdkPixbuf, Gdk
 import os
-import ttkbootstrap as tb
-from ttkbootstrap.constants import *
-from ttkbootstrap import Style
-from tkinter import Canvas, Scrollbar, filedialog, colorchooser
-from PIL import Image, ImageTk
+from tkinter import colorchooser
+import subprocess
 
-# Settings
 IMAGE_FOLDER = "/home/maskedsyntax/Pictures/Wallpapers"
-THUMBNAIL_SIZE = (150, 100)
-COLUMNS = 5
+THUMBNAIL_SIZE = (200, 120)
 
-# Setup
-style = Style(theme="darkly")
-root = style.master
-root.geometry("1000x700")
-root.title("Wallpaper Gallery")
+class WallpaperViewer(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Wallpaper Viewer")
+        self.set_default_size(1000, 700)
 
-# ---------------- Top Thumbnail Gallery ---------------- #
-frame_top = tb.Frame(root, bootstyle="dark")
-frame_top.pack(fill="both", expand=True)
+        # Main layout
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.add(vbox)
 
-canvas = Canvas(frame_top, bg=style.colors.bg)
-scroll_y = Scrollbar(frame_top, orient="vertical", command=canvas.yview)
-canvas.configure(yscrollcommand=scroll_y.set)
+        # --- Scrollable Image Grid --- #
+        scrolled = Gtk.ScrolledWindow()
+        vbox.pack_start(scrolled, True, True, 0)
 
-scroll_y.pack(side="right", fill="y")
-canvas.pack(side="left", fill="both", expand=True)
+        self.grid = Gtk.FlowBox()
+        self.grid.set_max_children_per_line(5)
+        self.grid.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.grid.set_row_spacing(10)
+        self.grid.set_column_spacing(10)
+        scrolled.add(self.grid)
 
-image_container = tb.Frame(canvas, bootstyle="dark")
-canvas.create_window((0, 0), window=image_container, anchor="nw")
+        self.selected_path = None
+        self.bg_color = "#000000"
+        self.selected_screen = "fullscreen"
 
-image_paths = [os.path.join(IMAGE_FOLDER, f) for f in os.listdir(IMAGE_FOLDER)
-               if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))]
+        self.load_images()
 
-thumbnail_refs = []
+        # --- Bottom Toolbar --- #
+        toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        toolbar.set_margin_top(5)
+        toolbar.set_margin_bottom(5)
+        toolbar.set_margin_start(10)
+        toolbar.set_margin_end(10)
+        vbox.pack_start(toolbar, False, False, 0)
 
-row = col = 0
-for path in image_paths:
-    try:
-        img = Image.open(path)
-        img.thumbnail(THUMBNAIL_SIZE)
-        photo = ImageTk.PhotoImage(img)
-        thumbnail_refs.append(photo)
-        label = tb.Label(image_container, image=photo, bootstyle="dark")
-        label.grid(row=row, column=col, padx=10, pady=10)
-        col += 1
-        if col >= COLUMNS:
-            col = 0
-            row += 1
-    except Exception as e:
-        print(f"Error loading image {path}: {e}")
+        # Mode ComboBox
+        self.mode_combo = Gtk.ComboBoxText()
+        for mode in ["fit", "center", "scaled"]:
+            self.mode_combo.append_text(mode)
+        self.mode_combo.set_active(0)
+        toolbar.pack_start(self.mode_combo, False, False, 0)
 
-def on_configure(event):
-    canvas.configure(scrollregion=canvas.bbox("all"))
+        # Screen MenuButton
+        
+        # self.screen_menu_btn = Gtk.MenuButton(label="Screen")
+        # self.screen_menu = Gtk.Menu()
+        # self.populate_screens()
+        # self.screen_menu_btn.set_popup(self.screen_menu)
+        # toolbar.pack_start(self.screen_menu_btn, False, False, 0)
 
-image_container.bind("<Configure>", on_configure)
+        self.screen_combo = Gtk.ComboBoxText()
+        self.populate_screens()
+        toolbar.pack_start(self.screen_combo, False, False, 0)
 
-# ---------------- Bottom Toolbar ---------------- #
-frame_bottom = tb.Frame(root, bootstyle="secondary")
-frame_bottom.pack(fill="x", padx=5, pady=5)
+        # Color Picker
+        color_btn = Gtk.Button(label="🖌 Background")
+        color_btn.connect("clicked", self.pick_color)
+        toolbar.pack_start(color_btn, False, False, 0)
 
-frame_left = tb.Frame(frame_bottom, bootstyle="secondary")
-frame_spacer = tb.Frame(frame_bottom, bootstyle="secondary")
-frame_right = tb.Frame(frame_bottom, bootstyle="secondary")
+        # Spacer
+        toolbar.pack_start(Gtk.Label(), True, True, 0)
 
-frame_left.pack(side="left", padx=10)
-frame_spacer.pack(side="left", expand=True, fill="both")
-frame_right.pack(side="right", padx=10)
+        # Preferences
+        prefs_btn = Gtk.Button(label="⚙ Preferences")
+        prefs_btn.connect("clicked", self.on_prefs)
+        toolbar.pack_start(prefs_btn, False, False, 0)
 
-# -- MenuButtons (like dropdowns) --
-menu_btn1 = tb.Menubutton(frame_left, text="Scaled", bootstyle="secondary")
-menu1 = tb.Menu(menu_btn1, tearoff=0)
-menu1.add_command(label="Fit to Window")
-menu1.add_command(label="Original Size")
-menu_btn1["menu"] = menu1
-menu_btn1.pack(side="left", padx=5)
+        # Apply
+        apply_btn = Gtk.Button(label="✔ Apply")
+        apply_btn.connect("clicked", self.apply_wallpaper)
+        toolbar.pack_start(apply_btn, False, False, 0)
 
-menu_btn2 = tb.Menubutton(frame_left, text="Full Screen", bootstyle="secondary")
-menu2 = tb.Menu(menu_btn2, tearoff=0)
-menu2.add_command(label="Enable")
-menu2.add_command(label="Disable")
-menu_btn2["menu"] = menu2
-menu_btn2.pack(side="left", padx=5)
+    def load_images(self):
+        for file in sorted(os.listdir(IMAGE_FOLDER)):
+            if not file.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                continue
+            full_path = os.path.join(IMAGE_FOLDER, file)
 
-# -- Color Picker Button --
-def pick_color():
-    color = colorchooser.askcolor(title="Pick Background Color")[1]
-    if color:
-        frame_top.config(style="", background=color)
-        image_container.config(style="", background=color)
+            try:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                    full_path, width=THUMBNAIL_SIZE[0], height=THUMBNAIL_SIZE[1], preserve_aspect_ratio=True
+                )
+                image = Gtk.Image.new_from_pixbuf(pixbuf)
 
-color_btn = tb.Button(frame_left, text="Background Color", bootstyle="dark",  command=pick_color)
-color_btn.pack(side="left", padx=5)
+                event_box = Gtk.EventBox()
+                event_box.add(image)
+                event_box.connect("button-press-event", self.on_image_click, full_path)
 
-# -- Right Side Buttons --
-btn_prefs = tb.Button(frame_right, text="⚙ Preferences", bootstyle="secondary")
-btn_prefs.pack(side="left", padx=5, ipadx=5)
+                frame = Gtk.Frame()
+                frame.set_shadow_type(Gtk.ShadowType.IN)
+                frame.add(event_box)
 
-btn_apply = tb.Button(frame_right, text="✔ Apply", bootstyle="success")
-btn_apply.pack(side="left", padx=5, ipadx=5)
+                self.grid.add(frame)
+            except Exception as e:
+                print(f"Could not load image {file}: {e}")
 
-root.mainloop()
+        self.grid.show_all()
+
+    def on_image_click(self, widget, event, image_path):
+        self.selected_path = image_path
+        print(f"Selected: {image_path}")
+
+    def pick_color(self, button):
+        color = colorchooser.askcolor(title="Pick Background")[1]
+        if color:
+            self.bg_color = color
+            print(f"Picked color: {color}")
+
+    def apply_wallpaper(self, button):
+        if not self.selected_path:
+            print("No wallpaper selected.")
+            return
+
+        mode = self.mode_combo.get_active_text()
+        screen = self.selected_screen
+        print(f"Applying wallpaper to {screen} with mode {mode} and bg {self.bg_color}")
+
+        # Example command using feh (you can change this to swaybg, xwallpaper, etc.)
+        cmd = ["feh", f"--bg-{mode}", "--image-bg", self.bg_color, self.selected_path]
+        subprocess.run(cmd)
+
+    def on_prefs(self, button):
+        print("Preferences clicked — not implemented.")
+
+    def populate_screens(self):
+        self.screen_combo.remove_all()
+
+        try:
+            output = subprocess.check_output(["xrandr"]).decode()
+            screens = [line.split()[0] for line in output.splitlines() if " connected" in line]
+        except Exception:
+            screens = []
+
+        screens.append("fullscreen")
+
+        for screen in screens:
+            self.screen_combo.append_text(screen)
+
+        self.screen_combo.set_active(0)
+        self.selected_screen = screens[0]
+        self.screen_combo.connect("changed", self.set_screen_from_combo)
+
+    def set_screen_from_combo(self, combo):
+        self.selected_screen = combo.get_active_text()
+        print(f"Selected screen: {self.selected_screen}")
+
+    def set_screen(self, menuitem, screen_name):
+        self.selected_screen = screen_name
+        self.screen_menu_btn.set_label(screen_name)
+        print(f"Selected screen: {screen_name}")
+
+def main():
+    win = WallpaperViewer()
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    Gtk.main()
+
+if __name__ == "__main__":
+    main()
