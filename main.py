@@ -49,14 +49,7 @@ class WallpaperViewer(Gtk.Window):
         self.mode_combo.set_active(0)
         toolbar.pack_start(self.mode_combo, False, False, 0)
 
-        # Screen MenuButton
-        
-        # self.screen_menu_btn = Gtk.MenuButton(label="Screen")
-        # self.screen_menu = Gtk.Menu()
-        # self.populate_screens()
-        # self.screen_menu_btn.set_popup(self.screen_menu)
-        # toolbar.pack_start(self.screen_menu_btn, False, False, 0)
-
+        # Screen ComboBox
         self.screen_combo = Gtk.ComboBoxText()
         self.populate_screens()
         toolbar.pack_start(self.screen_combo, False, False, 0)
