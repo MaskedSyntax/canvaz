@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="./docs/images/canvaz_logo_1.svg" alt="Canvaz Logo" width="150" />
+  <img src="./docs/images/canvaz_logo_2.svg" alt="Canvaz Logo" width="150" />
 </p>
 
 <h1 align="center">Canvaz</h1>
