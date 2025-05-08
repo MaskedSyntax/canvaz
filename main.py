@@ -10,7 +10,7 @@ THUMBNAIL_SIZE = (200, 120)
 
 class WallpaperViewer(Gtk.Window):
     def __init__(self):
-        super().__init__(title="Wallpaper Viewer")
+        super().__init__(title="Canvaz")
         self.set_default_size(1000, 700)
 
         # Main layout
